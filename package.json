@@ -1,0 +1,27 @@
+{
+  "name": "rakkita-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "expo": "~57.0.21",
+    "expo-dev-client": "~6.0.20",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start --dev-client --port 8088",
+    "start:clear": "expo start --dev-client --port 8088 -c",
+    "start:tunnel": "expo start --dev-client --port 8088 --tunnel",
+    "android": "expo run:android --port 8088",
+    "ios": "expo run:ios --port 8088",
+    "build:dev": "eas build --profile development --platform android",
+    "build:apk": "eas build --profile preview --platform android",
+    "web": "expo start --port 8088 --web"
+  },
+  "private": true
+}

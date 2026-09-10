@@ -1,0 +1,28 @@
+import React from 'react';
+import { View, StyleSheet, ViewStyle } from 'react-native';
+import { colors, radius, spacing } from '../../theme/tokens';
+
+export interface CardProps {
+  children: React.ReactNode;
+  style?: ViewStyle;
+}
+
+export const Card: React.FC<CardProps> = ({ children, style }) => {
+  return <View style={[styles.card, style]}>{children}</View>;
+};
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginVertical: spacing.xs,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+});
