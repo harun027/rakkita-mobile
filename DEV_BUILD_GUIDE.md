@@ -1,55 +1,48 @@
-# Panduan Development Build (Expo Dev Client)
+# Panduan Menjalankan & Build APK: Rakkita Mobile
 
-Tampilan pada gambar adalah **Expo Development Client (`expo-dev-client`)**. Ini adalah APK custom khusus project Anda yang memungkinkan scan QR server lokal tanpa batasan Expo Go.
-
----
-
-## 1. Setup yang Telah Dikonfigurasi
-1. **`package.json`**: Ditambahkan dependency `"expo-dev-client"` & script `start: "expo start --dev-client"`.
-2. **`app.json`**: Ditambahkan Android package id: `"com.rakkita.laundry"`.
-3. **`eas.json`**: Profil `development` siap untuk menghasilkan file **APK** internal.
+Repository GitHub: **[https://github.com/harun027/rakkita-mobile](https://github.com/harun027/rakkita-mobile)**  
+Port Server yang digunakan: **`8088`** (Bukan 8081).
 
 ---
 
-## 2. Cara Membuat APK Development Build
+## 1. Menghasilkan APK Development Build Agar Bisa Di-install di HP
 
-Pilih salah satu dari 2 metode berikut:
+Agar aplikasi memiliki tampilan Development Client persis seperti gambar yang Anda kirimkan:
 
-### Opsi A: Menggunakan EAS Cloud Build (Direkomendasikan - Tanpa perlu install Android Studio/SDK di PC)
-1. Login akun Expo (buat gratis di [expo.dev](https://expo.dev) jika belum punya):
-   ```bash
-   npx eas-cli login
-   ```
-2. Jalankan perintah build APK:
-   ```bash
-   npx eas-cli build --profile development --platform android
-   ```
-3. Tunggu proses cloud build selesai (biasanya 5–10 menit).
-4. Download dan install file `.apk` langsung ke HP Android Anda (melalui link/QR yang diberikan di terminal).
+Jalankan perintah berikut di terminal:
+```bash
+npx eas-cli login
+npx eas-cli build --profile development --platform android
+```
+- Ikuti login ke akun Expo Anda (gratis).
+- Tunggu EAS Cloud Build memproses APK (sekitar 5–10 menit).
+- Setelah selesai, terminal akan menampilkan **Link Download APK** dan **QR Code**.
+- Scan QR tersebut dengan HP Anda atau download file `.apk` langsung ke HP, lalu pasang/install.
 
 ---
 
-### Opsi B: Build Lokal Langsung di PC (Jika sudah ada Android Studio & JDK)
-1. Prebuild direktori native Android:
-   ```bash
-   npx expo prebuild
-   ```
-2. Jalankan build langsung ke HP / Emulator:
-   ```bash
-   npx expo run:android
-   ```
+## 2. Menjalankan Server Pengembangan di Laptop
+
+Setelah APK terpasang di HP:
+```bash
+npm run start
+```
+*Server otomatis berjalan di port **`8088`** (bukan 8081).*
+
+Jika HP dan laptop berada di jaringan Wi-Fi yang berbeda atau terkendala firewall, gunakan mode tunnel:
+```bash
+npm run start:tunnel
+```
 
 ---
 
-## 3. Cara Menjalankan Aplikasi di HP
+## 3. Menghubungkan HP ke Server Laptop
 
-1. Buka terminal di project:
-   ```bash
-   npm run start
-   # atau: npx expo start --dev-client
+Buka aplikasi **Rakkita Mobile** di HP Anda:
+1. Masukkan alamat URL:
    ```
-2. Buka aplikasi **Rakkita Laundry** di HP Android Anda (tampilan akan sama persis seperti gambar yang Anda kirimkan).
-3. Di HP Anda:
-   - Pilih server lokal yang otomatis muncul di daftar **Development Servers**, atau
-   - Tekan **Scan QR Code** dan arahkan kamera ke QR code di terminal PC Anda, atau
-   - Ketik IP komputer Anda (misal `http://192.168.1.xxx:8081`) lalu tekan **Connect**.
+   http://<IP-Laptop-Anda>:8088
+   ```
+   *(Contoh: `http://192.168.1.15:8088`)*
+2. Tekan tombol **Connect**, atau
+3. Tekan tombol **Scan QR Code** di HP Anda dan arahkan kamera ke QR Code yang muncul di terminal laptop Anda.
