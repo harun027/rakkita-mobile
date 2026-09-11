@@ -9,7 +9,7 @@ export interface InputProps {
   placeholder?: string;
   helperText?: string;
   error?: string;
-  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'decimal-pad';
+  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'decimal-pad' | 'number-pad';
   containerStyle?: ViewStyle;
   inputStyle?: TextStyle;
   prefix?: string;

@@ -1,17 +1,22 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { colors, radius } from '../../theme/tokens';
-import { CustodyStatus, OrderLifecycle, SettlementStatus, WorkItemStage } from '../../contracts/order';
+import { CustodyStatus, OrderLifecycle, SettlementStatus, WorkItemStage, BlockingIssueStatus } from '../../contracts/order';
 
 export interface StatusBadgeProps {
-  type: 'lifecycle' | 'custody' | 'settlement' | 'stage';
-  value: OrderLifecycle | CustodyStatus | SettlementStatus | WorkItemStage;
+  type: 'lifecycle' | 'custody' | 'settlement' | 'stage' | 'issue';
+  value: OrderLifecycle | CustodyStatus | SettlementStatus | WorkItemStage | BlockingIssueStatus;
   style?: ViewStyle;
 }
 
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ type, value, style }) => {
   const getBadgeMeta = (): { bg: string; text: string; border: string; label: string } => {
     switch (value) {
+      // Blocking Issue
+      case 'OPEN':
+        return { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5', label: 'Ada Kendala' };
+      case 'RESOLVED':
+        return { bg: '#DCFCE7', text: '#15803D', border: '#86EFAC', label: 'Kendala Selesai' };
       // Settlement (Money)
       case 'UNPAID':
         return { ...colors.status.unpaid, label: 'Belum Bayar' };

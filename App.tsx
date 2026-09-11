@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   View,
@@ -6,24 +6,26 @@ import {
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  ScrollView,
+  Modal,
 } from 'react-native';
 import { CashierIntakeScreen } from './src/screens/CashierIntakeScreen';
-import { OrderCard } from './src/components/domain/OrderCard';
+import { ProductionWorkboardScreen } from './src/screens/ProductionWorkboardScreen';
+import { CollectionScreen } from './src/screens/CollectionScreen';
+import { CashDrawerScreen } from './src/screens/CashDrawerScreen';
+import { OwnerOverviewScreen } from './src/screens/OwnerOverviewScreen';
 import { Order } from './src/contracts/order';
 import { colors, radius, spacing } from './src/theme/tokens';
-import { Button } from './src/components/ui/Button';
-import { StatusBadge } from './src/components/ui/Badge';
-import { Card } from './src/components/ui/Card';
+import { authStore } from './src/services/authStore';
+import { UserRole } from './src/contracts/rbac';
 
-// Sample active orders for Workboard & Collection
-const MOCK_ORDERS: Order[] = [
+// Initial active mock orders
+const INITIAL_MOCK_ORDERS: Order[] = [
   {
     id: 'ord-1',
     orderNumber: 'ORD-20260910-001',
-    tenantId: 'ten-1',
-    outletId: 'out-1',
-    customer: { id: 'c1', tenantId: 'ten-1', name: 'Ibu Siti Aminah', phone: '+628123456789' },
+    tenantId: 'ten-001',
+    outletId: 'out-01',
+    customer: { id: 'c1', tenantId: 'ten-001', name: 'Ibu Siti Aminah', phone: '08123456789' },
     lifecycle: 'ACTIVE',
     custody: 'IN_CUSTODY',
     settlement: 'PARTIAL',
@@ -69,9 +71,9 @@ const MOCK_ORDERS: Order[] = [
   {
     id: 'ord-2',
     orderNumber: 'ORD-20260909-082',
-    tenantId: 'ten-1',
-    outletId: 'out-1',
-    customer: { id: 'c2', tenantId: 'ten-1', name: 'Pak Rudi Hartono', phone: '+628198765432' },
+    tenantId: 'ten-001',
+    outletId: 'out-01',
+    customer: { id: 'c2', tenantId: 'ten-001', name: 'Pak Rudi Hartono', phone: '08198765432' },
     lifecycle: 'ACTIVE',
     custody: 'IN_CUSTODY',
     settlement: 'SETTLED',
@@ -97,7 +99,7 @@ const MOCK_ORDERS: Order[] = [
           id: 'srv-2',
           name: 'Bedcover Besar',
           unit: 'PER_PIECE',
-          pricePerUnitIdr: 50000,
+          pricePerUnitIdr: 25000,
           slaHours: 24,
           defaultWorkflow: ['QUEUED', 'WASHING', 'DRYING', 'QC', 'READY'],
         },
@@ -126,71 +128,68 @@ const MOCK_ORDERS: Order[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'intake' | 'production' | 'collection'>('intake');
-  const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
+  const [activeTab, setActiveTab] = useState<'intake' | 'production' | 'collection' | 'drawer' | 'owner'>('intake');
+  const [orders, setOrders] = useState<Order[]>(INITIAL_MOCK_ORDERS);
+  const [session, setSession] = useState(authStore.getSession());
+  const [isOutletModalOpen, setIsOutletModalOpen] = useState(false);
 
-  const handleAdvanceStage = (orderId: string) => {
+  useEffect(() => {
+    return authStore.subscribe((updated) => setSession(updated));
+  }, []);
+
+  const handleUpdateOrder = (updatedOrder: Order) => {
     setOrders((prev) =>
-      prev.map((ord) => {
-        if (ord.id !== orderId) return ord;
-        const line = ord.lines[0];
-        if (!line) return ord;
-
-        const stages = line.workflowSnapshot;
-        const currentIndex = stages.indexOf(line.currentStage);
-        const nextStage = stages[Math.min(stages.length - 1, currentIndex + 1)] || 'READY';
-
-        return {
-          ...ord,
-          lines: [
-            {
-              ...line,
-              currentStage: nextStage,
-            },
-          ],
-        };
-      })
+      prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
     );
   };
 
-  const handleHandover = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((ord) =>
-        ord.id === orderId
-          ? {
-              ...ord,
-              custody: 'HANDED_OVER',
-              handedOverAt: new Date().toISOString(),
-              handedOverTo: 'Pelanggan Langsung',
-            }
-          : ord
-      )
-    );
+  const handleOrderCreated = (newOrder: Order) => {
+    setOrders((prev) => [newOrder, ...prev]);
   };
+
+  const handleSwitchOutlet = (outletId: string) => {
+    authStore.switchOutlet(outletId);
+    setIsOutletModalOpen(false);
+  };
+
+  const handleSwitchRole = (role: UserRole) => {
+    authStore.switchRole(role);
+    setIsOutletModalOpen(false);
+  };
+
+  const activeOutlet = authStore.getActiveOutlet();
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* App Header */}
+      {/* Header Bar */}
       <View style={styles.header}>
         <View>
           <Text style={styles.brandTitle}>LaundryFlow / Rakkita</Text>
-          <Text style={styles.headerSubtitle}>Sistem Operasional Laundry Multi-Outlet</Text>
+          <TouchableOpacity onPress={() => setIsOutletModalOpen(true)}>
+            <Text style={styles.outletSwitcherLink}>
+              📍 {activeOutlet?.outletName || 'Pilih Outlet'} (Ganti ▾)
+            </Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.roleBadge}>
-          <Text style={styles.roleText}>Kasir / Operator</Text>
-        </View>
+
+        <TouchableOpacity
+          style={styles.roleBadge}
+          onPress={() => setIsOutletModalOpen(true)}
+        >
+          <Text style={styles.roleText}>{session?.currentRole || 'KASIR'}</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Main Navigation Tabs */}
+      {/* Role-Based Navigation Tabs */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabItem, activeTab === 'intake' && styles.tabItemActive]}
           onPress={() => setActiveTab('intake')}
         >
           <Text style={[styles.tabLabel, activeTab === 'intake' && styles.tabLabelActive]}>
-            1. Kasir Intake
+            Kasir
           </Text>
         </TouchableOpacity>
 
@@ -199,7 +198,7 @@ export default function App() {
           onPress={() => setActiveTab('production')}
         >
           <Text style={[styles.tabLabel, activeTab === 'production' && styles.tabLabelActive]}>
-            2. Produksi
+            Produksi
           </Text>
         </TouchableOpacity>
 
@@ -208,65 +207,112 @@ export default function App() {
           onPress={() => setActiveTab('collection')}
         >
           <Text style={[styles.tabLabel, activeTab === 'collection' && styles.tabLabelActive]}>
-            3. Pengambilan
+            Ambil
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'drawer' && styles.tabItemActive]}
+          onPress={() => setActiveTab('drawer')}
+        >
+          <Text style={[styles.tabLabel, activeTab === 'drawer' && styles.tabLabelActive]}>
+            Laci Kas
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'owner' && styles.tabItemActive]}
+          onPress={() => setActiveTab('owner')}
+        >
+          <Text style={[styles.tabLabel, activeTab === 'owner' && styles.tabLabelActive]}>
+            Owner
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Screen Body */}
-      {activeTab === 'intake' && <CashierIntakeScreen />}
+      {activeTab === 'intake' && (
+        <CashierIntakeScreen onOrderCreated={handleOrderCreated} />
+      )}
 
       {activeTab === 'production' && (
-        <ScrollView contentContainerStyle={styles.scrollArea}>
-          <Text style={styles.heading}>Antrean Kerja Operator (Sort Deadline)</Text>
-          {orders.map((ord) => (
-            <Card key={ord.id} style={{ marginBottom: spacing.md }}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.orderTitle}>
-                  {ord.orderNumber} · {ord.customer.name}
-                </Text>
-                <StatusBadge type="stage" value={ord.lines[0]?.currentStage || 'QUEUED'} />
-              </View>
-
-              <Text style={styles.serviceText}>
-                {ord.lines[0]?.service.name} ({ord.lines[0]?.bags[0]?.bagId || 'Kantung'})
-              </Text>
-
-              <View style={styles.stageActions}>
-                <Button
-                  size="sm"
-                  label={`Lanjut Tahap Berikutnya`}
-                  onPress={() => handleAdvanceStage(ord.id)}
-                />
-              </View>
-            </Card>
-          ))}
-        </ScrollView>
+        <ProductionWorkboardScreen orders={orders} onUpdateOrder={handleUpdateOrder} />
       )}
 
       {activeTab === 'collection' && (
-        <ScrollView contentContainerStyle={styles.scrollArea}>
-          <Text style={styles.heading}>Pengambilan Paket (Handover)</Text>
-          {orders.map((ord) => (
-            <View key={ord.id} style={{ marginBottom: spacing.md }}>
-              <OrderCard order={ord} />
-              {ord.custody === 'IN_CUSTODY' && (
-                <View style={{ marginTop: 6 }}>
-                  <Button
-                    label={
-                      ord.balanceIdr > 0
-                        ? 'Pelunasan & Serah Terima'
-                        : 'Serahkan Semua Paket'
-                    }
-                    variant={ord.balanceIdr > 0 ? 'secondary' : 'default'}
-                    onPress={() => handleHandover(ord.id)}
-                  />
-                </View>
-              )}
-            </View>
-          ))}
-        </ScrollView>
+        <CollectionScreen orders={orders} onUpdateOrder={handleUpdateOrder} />
       )}
+
+      {activeTab === 'drawer' && (
+        <CashDrawerScreen />
+      )}
+
+      {activeTab === 'owner' && (
+        <OwnerOverviewScreen orders={orders} />
+      )}
+
+      {/* Outlet & Role Switcher Modal */}
+      <Modal visible={isOutletModalOpen} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalHeading}>Pilih Outlet & Peran Aktif</Text>
+            <Text style={styles.modalSubheading}>
+              Mengganti outlet akan menyesuaikan izin akses & antrean kerja.
+            </Text>
+
+            <Text style={styles.groupLabel}>Daftar Outlet Anda:</Text>
+            {session?.availableOutlets.map((out) => (
+              <TouchableOpacity
+                key={out.outletId}
+                style={[
+                  styles.outletItem,
+                  out.outletId === session.activeOutletId && styles.outletItemActive,
+                ]}
+                onPress={() => handleSwitchOutlet(out.outletId)}
+              >
+                <Text
+                  style={[
+                    styles.outletItemText,
+                    out.outletId === session.activeOutletId && styles.outletItemTextActive,
+                  ]}
+                >
+                  {out.outletName}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <Text style={[styles.groupLabel, { marginTop: spacing.md }]}>Ganti Mode Peran:</Text>
+            <View style={styles.roleButtonsRow}>
+              {(['OUTLET_CASHIER', 'PRODUCTION_OPERATOR', 'OWNER'] as UserRole[]).map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  style={[
+                    styles.roleToggleBtn,
+                    session?.currentRole === r && styles.roleToggleBtnActive,
+                  ]}
+                  onPress={() => handleSwitchRole(r)}
+                >
+                  <Text
+                    style={[
+                      styles.roleToggleText,
+                      session?.currentRole === r && styles.roleToggleTextActive,
+                    ]}
+                  >
+                    {r === 'OUTLET_CASHIER' ? 'Kasir' : r === 'PRODUCTION_OPERATOR' ? 'Operator' : 'Owner'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={() => setIsOutletModalOpen(false)}
+            >
+              <Text style={styles.closeBtnText}>Tutup</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -291,20 +337,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.primary.DEFAULT,
   },
-  headerSubtitle: {
-    fontSize: 11,
+  outletSwitcherLink: {
+    fontSize: 12,
     color: colors.mutedForeground,
+    marginTop: 2,
+    fontWeight: '600',
   },
   roleBadge: {
-    backgroundColor: colors.muted,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: radius.full,
   },
   roleText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: colors.cardForeground,
+    fontWeight: '800',
+    color: '#0369A1',
   },
   tabBar: {
     flexDirection: 'row',
@@ -323,40 +371,97 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.primary.DEFAULT,
   },
   tabLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.mutedForeground,
   },
   tabLabelActive: {
     color: colors.primary.DEFAULT,
+    fontWeight: '800',
   },
-  scrollArea: {
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: spacing.md,
-    paddingBottom: 40,
   },
-  heading: {
-    fontSize: 15,
+  modalBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalHeading: {
+    fontSize: 16,
     fontWeight: '700',
     color: colors.cardForeground,
-    marginBottom: spacing.sm,
   },
-  cardHeader: {
+  modalSubheading: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    marginBottom: spacing.md,
+  },
+  groupLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.cardForeground,
+    marginBottom: 6,
+  },
+  outletItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 6,
+  },
+  outletItemActive: {
+    borderColor: colors.primary.DEFAULT,
+    backgroundColor: '#F0FDF4',
+  },
+  outletItemText: {
+    fontSize: 13,
+    color: colors.cardForeground,
+  },
+  outletItemTextActive: {
+    fontWeight: '700',
+    color: colors.primary.DEFAULT,
+  },
+  roleButtonsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 8,
+  },
+  roleToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
   },
-  orderTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+  roleToggleBtnActive: {
+    backgroundColor: colors.primary.DEFAULT,
+    borderColor: colors.primary.DEFAULT,
+  },
+  roleToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: colors.cardForeground,
   },
-  serviceText: {
+  roleToggleTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  closeBtn: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  closeBtnText: {
     fontSize: 13,
     color: colors.mutedForeground,
-    marginVertical: 4,
-  },
-  stageActions: {
-    marginTop: spacing.sm,
-    alignItems: 'flex-start',
+    fontWeight: '600',
   },
 });

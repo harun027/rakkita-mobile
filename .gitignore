@@ -11,3 +11,7 @@ npm-debug.*
 web-build/
 .env*.local
 .env
+.agents/
+.claude/
+agent/
+skills-lock.json

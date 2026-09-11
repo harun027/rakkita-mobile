@@ -19,7 +19,9 @@ import {
   formatWeight,
 } from '../core/pricing';
 import { colors, spacing, radius } from '../theme/tokens';
-import { ServiceSnapshot } from '../contracts/order';
+import { ServiceSnapshot, Order } from '../contracts/order';
+import { WhatsAppTemplates } from '../services/whatsapp';
+import { Linking } from 'react-native';
 
 // Default service catalog snapshot (Section 7.1 FR04)
 const SAMPLE_SERVICES: ServiceSnapshot[] = [
@@ -53,7 +55,7 @@ const SAMPLE_SERVICES: ServiceSnapshot[] = [
   },
 ];
 
-export const CashierIntakeScreen: React.FC<{ onOrderCreated?: () => void }> = () => {
+export const CashierIntakeScreen: React.FC<{ onOrderCreated?: (order: Order) => void }> = ({ onOrderCreated }) => {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [selectedService, setSelectedService] = useState<ServiceSnapshot>(SAMPLE_SERVICES[0]);
@@ -87,16 +89,90 @@ export const CashierIntakeScreen: React.FC<{ onOrderCreated?: () => void }> = ()
     setIsSubmitting(true);
     setTimeout(() => {
       setIsSubmitting(false);
+      const randomOrderSuffix = Math.floor(100 + Math.random() * 900);
+      const newOrderNumber = `ORD-20260911-${randomOrderSuffix}`;
+      const countBags = parseInt(bagCount, 10) || 1;
+
+      const newOrder: Order = {
+        id: `ord-${Date.now()}`,
+        orderNumber: newOrderNumber,
+        tenantId: 'ten-001',
+        outletId: 'out-01',
+        customer: {
+          id: `c-${Date.now()}`,
+          tenantId: 'ten-001',
+          name: customerName.trim(),
+          phone: customerPhone.trim(),
+        },
+        lifecycle: 'ACTIVE',
+        custody: 'IN_CUSTODY',
+        settlement: remainingBalanceIdr === 0 ? 'SETTLED' : depositIdr > 0 ? 'PARTIAL' : 'UNPAID',
+        blockingIssue: 'NONE',
+        initialChargesIdr: quote.grossIdr,
+        debitAdjustmentsIdr: 0,
+        creditAdjustmentsIdr: 0,
+        netChargesIdr: quote.grossIdr,
+        confirmedReceiptsIdr: depositIdr,
+        confirmedRefundsIdr: 0,
+        correctingReversalsIdr: 0,
+        netReceiptsIdr: depositIdr,
+        balanceIdr: remainingBalanceIdr,
+        createdAt: new Date().toISOString(),
+        originalPromisedAt: new Date(Date.now() + selectedService.slaHours * 3600 * 1000).toISOString(),
+        currentPromisedAt: new Date(Date.now() + selectedService.slaHours * 3600 * 1000).toISOString(),
+        lines: [
+          {
+            lineId: `line-${Date.now()}`,
+            service: selectedService,
+            actualGrams: actualGrams,
+            billableGrams: quote.billableGrams,
+            quantity: 1,
+            unitPriceIdr: selectedService.pricePerUnitIdr,
+            lineGrossIdr: quote.grossIdr,
+            dueAt: new Date(Date.now() + selectedService.slaHours * 3600 * 1000).toISOString(),
+            workflowSnapshot: [...selectedService.defaultWorkflow],
+            currentStage: 'QUEUED',
+            bags: Array.from({ length: countBags }).map((_, idx) => ({
+              bagId: `BAG-${randomOrderSuffix}-${idx + 1}`,
+              orderId: `ord-${Date.now()}`,
+              lineId: `line-${Date.now()}`,
+              labelCount: 1,
+            })),
+          },
+        ],
+        finalPackages: [],
+      };
+
+      onOrderCreated?.(newOrder);
+
       Alert.alert(
         'Order Berhasil Dibuat',
-        `No Order: ORD-20260910-001\nPelanggan: ${customerName}\nTotal: ${formatRupiah(
+        `No Order: ${newOrderNumber}\nPelanggan: ${customerName}\nTotal: ${formatRupiah(
           quote.grossIdr
         )}\nDP Diterima: ${formatRupiah(depositIdr)}\nSisa: ${formatRupiah(
           remainingBalanceIdr
         )}\n\nKantung: ${bagCount} label disiapkan.`,
         [
           {
-            text: 'Cetak Label & Resi',
+            text: 'Kirim WA & Selesai',
+            onPress: () => {
+              if (customerPhone.trim()) {
+                const { url } = WhatsAppTemplates.orderCreated({
+                  customerPhone: customerPhone.trim(),
+                  customerName: customerName.trim(),
+                  orderNumber: newOrderNumber,
+                  totalIdr: quote.grossIdr,
+                  balanceIdr: remainingBalanceIdr,
+                });
+                Linking.openURL(url).catch(() => {});
+              }
+              setCustomerName('');
+              setCustomerPhone('');
+              setWeightInputGrams('0');
+            },
+          },
+          {
+            text: 'Tutup',
             onPress: () => {
               setCustomerName('');
               setCustomerPhone('');
@@ -105,7 +181,7 @@ export const CashierIntakeScreen: React.FC<{ onOrderCreated?: () => void }> = ()
           },
         ]
       );
-    }, 800);
+    }, 600);
   };
 
   return (
