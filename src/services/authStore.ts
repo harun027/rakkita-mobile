@@ -3,7 +3,7 @@
  * Section 23.4 (Never store plain secrets, handle token refresh, tenant/outlet scoping)
  */
 
-import { UserSession, OutletMembership } from '../contracts/rbac';
+import { UserSession, OutletMembership, UserRole } from '../contracts/rbac';
 
 const DEFAULT_MOCK_SESSION: UserSession = {
   userId: 'usr-001',
@@ -68,6 +68,20 @@ class AuthStore {
       ...this.currentSession,
       currentRole: newRole,
     };
+    this.notify();
+  }
+
+  loginWithRole(role: UserRole, email: string) {
+    this.currentSession = {
+      ...DEFAULT_MOCK_SESSION,
+      email,
+      currentRole: role,
+    };
+    this.notify();
+  }
+
+  logout() {
+    this.currentSession = null;
     this.notify();
   }
 

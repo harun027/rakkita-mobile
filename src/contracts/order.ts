@@ -27,7 +27,14 @@ export type SettlementStatus =
   | 'CREDIT_DUE' 
   | 'ZERO_CHARGE';
 
-export type BlockingIssueStatus = 'NONE' | 'OPEN' | 'RESOLVED';
+export type BlockingIssueStatus = 'NONE' | 'OPEN' | 'RESOLVED' | BlockingIssueType;
+
+export type BlockingIssueType = 
+  | 'STAIN_PERSISTS' 
+  | 'DAMAGE_DETECTED' 
+  | 'COLOR_BLEED' 
+  | 'MISSING_ITEM' 
+  | 'OTHER';
 
 export type ServicePricingUnit = 'PER_KG' | 'PER_PIECE';
 

@@ -3,7 +3,8 @@ import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextS
 import { colors, radius, spacing } from '../../theme/tokens';
 
 export interface ButtonProps {
-  label: string;
+  label?: string;
+  title?: string;
   onPress: () => void;
   variant?: 'default' | 'secondary' | 'outline' | 'destructive' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
@@ -16,6 +17,7 @@ export interface ButtonProps {
 
 export const Button: React.FC<ButtonProps> = ({
   label,
+  title,
   onPress,
   variant = 'default',
   size = 'md',
@@ -25,6 +27,7 @@ export const Button: React.FC<ButtonProps> = ({
   textStyle,
   icon,
 }) => {
+  const displayLabel = label || title || '';
   const getContainerStyle = (): ViewStyle => {
     let base: ViewStyle = styles.base;
 
@@ -72,14 +75,14 @@ export const Button: React.FC<ButtonProps> = ({
         style,
       ]}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={displayLabel}
     >
       {loading ? (
         <ActivityIndicator size="small" color={variant === 'outline' ? colors.primary.DEFAULT : '#FFF'} />
       ) : (
         <>
           {icon}
-          <Text style={[getLabelStyle(), textStyle]}>{label}</Text>
+          <Text style={[getLabelStyle(), textStyle]}>{displayLabel}</Text>
         </>
       )}
     </TouchableOpacity>

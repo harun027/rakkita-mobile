@@ -13,6 +13,8 @@ import { ProductionWorkboardScreen } from './src/screens/ProductionWorkboardScre
 import { CollectionScreen } from './src/screens/CollectionScreen';
 import { CashDrawerScreen } from './src/screens/CashDrawerScreen';
 import { OwnerOverviewScreen } from './src/screens/OwnerOverviewScreen';
+import { AccountScreen } from './src/screens/AccountScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { Order } from './src/contracts/order';
 import { colors, radius, spacing } from './src/theme/tokens';
 import { authStore } from './src/services/authStore';
@@ -128,10 +130,11 @@ const INITIAL_MOCK_ORDERS: Order[] = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'intake' | 'production' | 'collection' | 'drawer' | 'owner'>('intake');
-  const [orders, setOrders] = useState<Order[]>(INITIAL_MOCK_ORDERS);
   const [session, setSession] = useState(authStore.getSession());
+  const [activeTab, setActiveTab] = useState<'intake' | 'production' | 'collection' | 'drawer' | 'owner' | 'account'>('intake');
+  const [orders, setOrders] = useState<Order[]>(INITIAL_MOCK_ORDERS);
   const [isOutletModalOpen, setIsOutletModalOpen] = useState(false);
+  const [isOfflineSimulated, setIsOfflineSimulated] = useState(false);
 
   useEffect(() => {
     return authStore.subscribe((updated) => setSession(updated));
@@ -157,11 +160,25 @@ export default function App() {
     setIsOutletModalOpen(false);
   };
 
+  // If unauthenticated, show LoginScreen
+  if (!session) {
+    return <LoginScreen onLoginSuccess={() => setActiveTab('intake')} />;
+  }
+
   const activeOutlet = authStore.getActiveOutlet();
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Network Alert (MB09) */}
+      {isOfflineSimulated && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            ⚡ SIMULASI OFFLINE: Transaksi Baru Dinonaktifkan (Section 23.3 MB09)
+          </Text>
+        </View>
+      )}
 
       {/* Header Bar */}
       <View style={styles.header}>
@@ -216,7 +233,7 @@ export default function App() {
           onPress={() => setActiveTab('drawer')}
         >
           <Text style={[styles.tabLabel, activeTab === 'drawer' && styles.tabLabelActive]}>
-            Laci Kas
+            Kas
           </Text>
         </TouchableOpacity>
 
@@ -228,11 +245,24 @@ export default function App() {
             Owner
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabItem, activeTab === 'account' && styles.tabItemActive]}
+          onPress={() => setActiveTab('account')}
+        >
+          <Text style={[styles.tabLabel, activeTab === 'account' && styles.tabLabelActive]}>
+            Akun
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Screen Body */}
       {activeTab === 'intake' && (
-        <CashierIntakeScreen onOrderCreated={handleOrderCreated} />
+        <CashierIntakeScreen
+          orders={orders}
+          onOrderCreated={handleOrderCreated}
+          isOffline={isOfflineSimulated}
+        />
       )}
 
       {activeTab === 'production' && (
@@ -240,7 +270,11 @@ export default function App() {
       )}
 
       {activeTab === 'collection' && (
-        <CollectionScreen orders={orders} onUpdateOrder={handleUpdateOrder} />
+        <CollectionScreen
+          orders={orders}
+          onUpdateOrder={handleUpdateOrder}
+          currentUserRole={session?.currentRole}
+        />
       )}
 
       {activeTab === 'drawer' && (
@@ -251,13 +285,22 @@ export default function App() {
         <OwnerOverviewScreen orders={orders} />
       )}
 
+      {activeTab === 'account' && (
+        <AccountScreen
+          onLogout={() => {}}
+          isOfflineSimulated={isOfflineSimulated}
+          onToggleOffline={setIsOfflineSimulated}
+          onOpenOutletModal={() => setIsOutletModalOpen(true)}
+        />
+      )}
+
       {/* Outlet & Role Switcher Modal */}
       <Modal visible={isOutletModalOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalBox}>
             <Text style={styles.modalHeading}>Pilih Outlet & Peran Aktif</Text>
             <Text style={styles.modalSubheading}>
-              Mengganti outlet akan menyesuaikan izin akses & antrean kerja.
+              Mengganti outlet akan menyesuaikan izin akses & antrean kerja (PRD MB02).
             </Text>
 
             <Text style={styles.groupLabel}>Daftar Outlet Anda:</Text>
@@ -270,35 +313,50 @@ export default function App() {
                 ]}
                 onPress={() => handleSwitchOutlet(out.outletId)}
               >
-                <Text
-                  style={[
-                    styles.outletItemText,
-                    out.outletId === session.activeOutletId && styles.outletItemTextActive,
-                  ]}
-                >
-                  {out.outletName}
-                </Text>
+                <View>
+                  <Text
+                    style={[
+                      styles.outletName,
+                      out.outletId === session.activeOutletId && styles.outletNameActive,
+                    ]}
+                  >
+                    {out.outletName}
+                  </Text>
+                  <Text style={styles.outletRole}>Peran: {out.role}</Text>
+                </View>
+                {out.outletId === session.activeOutletId && (
+                  <Text style={styles.activeCheck}>✓ Aktif</Text>
+                )}
               </TouchableOpacity>
             ))}
 
-            <Text style={[styles.groupLabel, { marginTop: spacing.md }]}>Ganti Mode Peran:</Text>
-            <View style={styles.roleButtonsRow}>
-              {(['OUTLET_CASHIER', 'PRODUCTION_OPERATOR', 'OWNER'] as UserRole[]).map((r) => (
+            <Text style={[styles.groupLabel, { marginTop: spacing.md }]}>
+              Uji Coba Hak Akses (Role RBAC):
+            </Text>
+            <View style={styles.roleButtonGroup}>
+              {(
+                [
+                  'OUTLET_CASHIER',
+                  'OUTLET_OPERATOR',
+                  'OUTLET_SUPERVISOR',
+                  'BUSINESS_OWNER',
+                ] as UserRole[]
+              ).map((r) => (
                 <TouchableOpacity
                   key={r}
                   style={[
-                    styles.roleToggleBtn,
-                    session?.currentRole === r && styles.roleToggleBtnActive,
+                    styles.roleChip,
+                    session?.currentRole === r && styles.roleChipActive,
                   ]}
                   onPress={() => handleSwitchRole(r)}
                 >
                   <Text
                     style={[
-                      styles.roleToggleText,
-                      session?.currentRole === r && styles.roleToggleTextActive,
+                      styles.roleChipText,
+                      session?.currentRole === r && styles.roleChipTextActive,
                     ]}
                   >
-                    {r === 'OUTLET_CASHIER' ? 'Kasir' : r === 'PRODUCTION_OPERATOR' ? 'Operator' : 'Owner'}
+                    {r.replace('OUTLET_', '').replace('BUSINESS_', '')}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -322,13 +380,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  offlineBanner: {
+    backgroundColor: colors.destructive.DEFAULT,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+  },
+  offlineBannerText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -341,28 +410,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.mutedForeground,
     marginTop: 2,
-    fontWeight: '600',
   },
   roleBadge: {
-    backgroundColor: '#E0F2FE',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    backgroundColor: colors.muted,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   roleText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#0369A1',
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.cardForeground,
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   tabItem: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
@@ -371,27 +441,24 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.primary.DEFAULT,
   },
   tabLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: colors.mutedForeground,
   },
   tabLabelActive: {
     color: colors.primary.DEFAULT,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.md,
+    padding: spacing.lg,
   },
   modalBox: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: radius.lg,
-    padding: spacing.lg,
-    width: '100%',
-    maxWidth: 400,
+    padding: spacing.xl,
   },
   modalHeading: {
     fontSize: 16,
@@ -401,67 +468,84 @@ const styles = StyleSheet.create({
   modalSubheading: {
     fontSize: 12,
     color: colors.mutedForeground,
+    marginTop: 4,
     marginBottom: spacing.md,
   },
   groupLabel: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.cardForeground,
-    marginBottom: 6,
+    marginBottom: spacing.xs,
   },
   outletItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: 6,
+    marginBottom: spacing.xs,
   },
   outletItemActive: {
     borderColor: colors.primary.DEFAULT,
-    backgroundColor: '#F0FDF4',
+    backgroundColor: colors.primary.light,
   },
-  outletItemText: {
+  outletName: {
     fontSize: 13,
-    color: colors.cardForeground,
-  },
-  outletItemTextActive: {
-    fontWeight: '700',
-    color: colors.primary.DEFAULT,
-  },
-  roleButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  roleToggleBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  roleToggleBtnActive: {
-    backgroundColor: colors.primary.DEFAULT,
-    borderColor: colors.primary.DEFAULT,
-  },
-  roleToggleText: {
-    fontSize: 12,
     fontWeight: '600',
     color: colors.cardForeground,
   },
-  roleToggleTextActive: {
-    color: '#FFFFFF',
+  outletNameActive: {
+    color: colors.primary.dark,
+    fontWeight: '700',
+  },
+  outletRole: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  activeCheck: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary.DEFAULT,
+  },
+  roleButtonGroup: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  roleChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.muted,
+  },
+  roleChipActive: {
+    borderColor: colors.primary.DEFAULT,
+    backgroundColor: colors.primary.light,
+  },
+  roleChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+  },
+  roleChipTextActive: {
+    color: colors.primary.dark,
     fontWeight: '700',
   },
   closeBtn: {
     marginTop: spacing.lg,
+    paddingVertical: spacing.sm,
     alignItems: 'center',
-    paddingVertical: 8,
+    backgroundColor: colors.muted,
+    borderRadius: radius.md,
   },
   closeBtnText: {
     fontSize: 13,
-    color: colors.mutedForeground,
     fontWeight: '600',
+    color: colors.cardForeground,
   },
 });

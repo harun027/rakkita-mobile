@@ -47,6 +47,31 @@ Terima kasih!`;
   },
 
   /**
+   * Generates formatted digital intake receipt text (MB08)
+   */
+  orderIntakeReceipt(order: any): string {
+    const linesSummary = order.lines
+      .map((l: any) => `- ${l.service.name}: ${l.service.unit === 'PER_KG' ? `${l.actualGrams}g` : `${l.quantity} pcs`} (Rp ${l.lineGrossIdr.toLocaleString('id-ID')})`)
+      .join('\n');
+
+    return `🧾 *NOTA TRANSAKSI LAUNDRYFLOW*
+No. Order: ${order.orderNumber}
+Pelanggan: ${order.customer.name}
+Tanggal: ${new Date(order.createdAt).toLocaleDateString('id-ID')}
+Target Selesai: ${new Date(order.currentPromisedAt).toLocaleDateString('id-ID')}
+
+*Rincian Layanan:*
+${linesSummary}
+
+Total Tagihan: Rp ${order.netChargesIdr.toLocaleString('id-ID')}
+Uang Masuk: Rp ${order.confirmedReceiptsIdr.toLocaleString('id-ID')}
+Sisa Tagihan: ${order.balanceIdr > 0 ? `Rp ${order.balanceIdr.toLocaleString('id-ID')}` : 'LUNAS'}
+
+Pantau status proses cucian:
+https://laundryflow.id/track/${order.orderNumber}`;
+  },
+
+  /**
    * Generates ready-for-collection notification
    */
   orderReady(params: WhatsAppMessageParams): { phone: string; message: string; url: string } {

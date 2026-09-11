@@ -5,9 +5,11 @@
 
 export type UserRole = 
   | 'OWNER' 
+  | 'BUSINESS_OWNER'
   | 'OUTLET_SUPERVISOR' 
   | 'OUTLET_CASHIER' 
   | 'PRODUCTION_OPERATOR' 
+  | 'OUTLET_OPERATOR'
   | 'SAAS_ADMIN';
 
 export interface OutletMembership {

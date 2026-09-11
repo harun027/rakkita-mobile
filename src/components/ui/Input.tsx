@@ -9,10 +9,14 @@ export interface InputProps {
   placeholder?: string;
   helperText?: string;
   error?: string;
-  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'decimal-pad' | 'number-pad';
+  keyboardType?: 'default' | 'numeric' | 'phone-pad' | 'decimal-pad' | 'number-pad' | 'email-address';
   containerStyle?: ViewStyle;
   inputStyle?: TextStyle;
   prefix?: string;
+  multiline?: boolean;
+  numberOfLines?: number;
+  secureTextEntry?: boolean;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }
 
 export const Input: React.FC<InputProps> = ({
@@ -26,6 +30,10 @@ export const Input: React.FC<InputProps> = ({
   containerStyle,
   inputStyle,
   prefix,
+  multiline,
+  numberOfLines,
+  secureTextEntry,
+  autoCapitalize,
 }) => {
   return (
     <View style={[styles.container, containerStyle]}>
@@ -33,12 +41,16 @@ export const Input: React.FC<InputProps> = ({
       <View style={[styles.inputWrapper, error ? styles.inputError : null]}>
         {prefix && <Text style={styles.prefix}>{prefix}</Text>}
         <TextInput
-          style={[styles.input, inputStyle]}
+          style={[styles.input, multiline ? styles.multilineInput : null, inputStyle]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.mutedForeground}
           keyboardType={keyboardType}
+          multiline={multiline}
+          numberOfLines={numberOfLines}
+          secureTextEntry={secureTextEntry}
+          autoCapitalize={autoCapitalize}
           accessibilityLabel={label || placeholder}
         />
       </View>
@@ -85,6 +97,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.cardForeground,
     paddingVertical: 10,
+  },
+  multilineInput: {
+    minHeight: 60,
+    textAlignVertical: 'top',
   },
   helperText: {
     fontSize: 12,

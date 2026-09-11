@@ -16,9 +16,10 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { StatusBadge } from '../components/ui/Badge';
-import { Order, WorkItemStage, FinalPackage } from '../contracts/order';
+import { Order, WorkItemStage, FinalPackage, BlockingIssueType } from '../contracts/order';
 import { canAdvanceWorkStage } from '../core/stateMachine';
 import { parseScannedCode } from '../core/qrParser';
+import { IssueReportModal } from '../components/domain/IssueReportModal';
 import { colors, spacing, radius } from '../theme/tokens';
 
 interface ProductionWorkboardProps {
@@ -32,9 +33,8 @@ export function ProductionWorkboardScreen({ orders, onUpdateOrder }: ProductionW
   const [qcRackLocation, setQcRackLocation] = useState('RAK-A1');
   const [qcPackageCount, setQcPackageCount] = useState('1');
 
-  // Issue reporting modal
+  // Issue reporting modal state
   const [selectedOrderForIssue, setSelectedOrderForIssue] = useState<Order | null>(null);
-  const [issueReason, setIssueReason] = useState('');
 
   // Filter and sort by deadline (dueAt ascending)
   const activeOrders = useMemo(() => {
@@ -79,244 +79,308 @@ export function ProductionWorkboardScreen({ orders, onUpdateOrder }: ProductionW
 
     const check = canAdvanceWorkStage(line.currentStage, nextStage, stages, order.blockingIssue);
     if (!check.allowed) {
-      Alert.alert('Gagal Maju Tahap', check.reason);
+      Alert.alert('Transisi Ditolak', check.reason);
       return;
     }
 
-    const updatedLines = order.lines.map((l) =>
-      l.lineId === lineId ? { ...l, currentStage: nextStage } : l
-    );
+    // Apply stage update
+    const updatedLines = order.lines.map((l) => {
+      if (l.lineId === lineId) {
+        return {
+          ...l,
+          currentStage: nextStage,
+        };
+      }
+      return l;
+    });
 
-    onUpdateOrder({
+    const updatedOrder: Order = {
       ...order,
       lines: updatedLines,
-    });
+    };
+
+    onUpdateOrder(updatedOrder);
   };
 
-  const handleConfirmQCAndPack = () => {
+  const handleConfirmQCAndRack = () => {
     if (!selectedOrderForQC) return;
-
-    const pkgCount = parseInt(qcPackageCount, 10);
-    if (isNaN(pkgCount) || pkgCount <= 0) {
-      Alert.alert('Error', 'Jumlah paket harus minimal 1.');
-      return;
-    }
     if (!qcRackLocation.trim()) {
-      Alert.alert('Error', 'Lokasi rak wajib diisi.');
+      Alert.alert('Validasi', 'Lokasi rak penyimpanan pakaian wajib diisi.');
       return;
     }
 
-    const newPackages: FinalPackage[] = Array.from({ length: pkgCount }).map((_, i) => ({
-      packageId: `PKG-${selectedOrderForQC.orderNumber.slice(-3)}-${i + 1}`,
+    const pkgCount = parseInt(qcPackageCount, 10) || 1;
+    const pkg: FinalPackage = {
+      packageId: `PKG-${Date.now().toString().slice(-4)}`,
       orderId: selectedOrderForQC.id,
       rackLocation: qcRackLocation.trim().toUpperCase(),
-      itemCount: 1,
+      itemCount: pkgCount,
       packedAt: new Date().toISOString(),
-      packedBy: 'Operator Produksi',
-    }));
+      packedBy: 'Operator 1',
+    };
 
+    // Advance all lines to READY
     const updatedLines = selectedOrderForQC.lines.map((l) => ({
       ...l,
       currentStage: 'READY' as WorkItemStage,
     }));
 
-    onUpdateOrder({
+    const updatedOrder: Order = {
       ...selectedOrderForQC,
       lines: updatedLines,
-      finalPackages: newPackages,
-      currentReadyAt: new Date().toISOString(),
+      finalPackages: [...selectedOrderForQC.finalPackages, pkg],
       firstReadyAt: selectedOrderForQC.firstReadyAt || new Date().toISOString(),
-    });
+      currentReadyAt: new Date().toISOString(),
+    };
 
+    onUpdateOrder(updatedOrder);
     setSelectedOrderForQC(null);
-    Alert.alert('QC Lolos', `Pesanan siap diambil di ${qcRackLocation.toUpperCase()} (${pkgCount} paket).`);
+    Alert.alert('QC Lolos & Masuk Rak', `Paket ditempatkan di ${pkg.rackLocation}. Siap diambil!`);
   };
 
-  const handleReportIssue = () => {
-    if (!selectedOrderForIssue) return;
-    if (!issueReason.trim()) {
-      Alert.alert('Error', 'Alasan kendala wajib diisi.');
-      return;
-    }
+  const handleSubmitIssue = (orderId: string, issueType: BlockingIssueType, note: string) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) return;
 
-    onUpdateOrder({
-      ...selectedOrderForIssue,
-      blockingIssue: 'OPEN',
-    });
+    const updatedOrder: Order = {
+      ...target,
+      blockingIssue: issueType,
+    };
 
-    Alert.alert('Kendala Dicatat', `Pesanan ditandai bermasalah: "${issueReason}". Penyerahan akan diblokir sementara.`);
-    setSelectedOrderForIssue(null);
-    setIssueReason('');
+    onUpdateOrder(updatedOrder);
+    Alert.alert(
+      'Kendala Tercatat (M10)',
+      `Order ${target.orderNumber} ditahan dengan status: ${issueType}.\nCatatan: ${note}`
+    );
+  };
+
+  const handleResolveIssue = (orderId: string, resolutionNote: string) => {
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) return;
+
+    const updatedOrder: Order = {
+      ...target,
+      blockingIssue: 'NONE',
+    };
+
+    onUpdateOrder(updatedOrder);
+    Alert.alert(
+      'Kendala Diselesaikan',
+      `Blokir order ${target.orderNumber} telah dibuka. Pakaian dapat dilanjutkan ke tahap berikutnya.\nSolusi: ${resolutionNote}`
+    );
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Header & Quick Filter */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Antrean Kerja Produksi</Text>
-        <Text style={styles.subtitle}>
-          Urutan prioritas berdasarkan deadline terdekat (SLA).
+    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      {/* Search and Barcode Input */}
+      <View style={styles.searchBox}>
+        <Input
+          placeholder="🔍 Scan / Ketik No Order, Label Kantong (BAG-xxx)..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+
+      {/* Queue Statistics */}
+      <View style={styles.statusBar}>
+        <Text style={styles.statusText}>
+          Antrean Kerja Aktif: <Text style={styles.bold}>{activeOrders.length} Order</Text>
         </Text>
+        <Text style={styles.sortHint}>Urut berdasarkan deadline tercepat ⏱️</Text>
       </View>
 
-      <Input
-        label="Cari / Scan Bag ID atau No. Nota"
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Contoh: BAG-001 atau ORD-2026..."
-      />
+      {/* Order Cards */}
+      {activeOrders.length === 0 ? (
+        <Card style={styles.emptyCard}>
+          <Text style={styles.emptyText}>Tidak ada antrean cuci aktif saat ini.</Text>
+        </Card>
+      ) : (
+        activeOrders.map((ord) => {
+          const isOverdue = new Date(ord.currentPromisedAt).getTime() < Date.now();
+          const hasIssue = ord.blockingIssue !== 'NONE';
 
-      <View style={{ marginTop: spacing.md }}>
-        {activeOrders.length === 0 ? (
-          <Card style={styles.emptyCard}>
-            <Text style={styles.emptyText}>Tidak ada pesanan aktif yang cocok.</Text>
-          </Card>
-        ) : (
-          activeOrders.map((ord) => {
-            const line = ord.lines[0];
-            const isOverdue = new Date(ord.currentPromisedAt).getTime() < Date.now();
-
-            return (
-              <Card key={ord.id} style={[styles.orderCard, isOverdue && styles.overdueCard]}>
-                <View style={styles.cardHeader}>
-                  <View>
-                    <Text style={styles.orderNumber}>{ord.orderNumber}</Text>
-                    <Text style={styles.customerName}>{ord.customer.name}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <StatusBadge type="stage" value={line?.currentStage || 'QUEUED'} />
-                    {ord.blockingIssue === 'OPEN' && (
-                      <StatusBadge type="issue" value="OPEN" />
-                    )}
-                  </View>
-                </View>
-
-                {/* Line & Bag Details */}
-                <View style={styles.detailsRow}>
-                  <Text style={styles.serviceName}>{line?.service.name}</Text>
-                  <Text style={styles.bagLabel}>
-                    ID Kantong: {line?.bags.map((b) => b.bagId).join(', ') || '-'}
+          return (
+            <Card
+              key={ord.id}
+              style={[
+                styles.orderCard,
+                isOverdue && styles.overdueCard,
+                hasIssue && styles.blockedCard,
+              ]}
+            >
+              {/* Card Header */}
+              <View style={styles.orderHeader}>
+                <View>
+                  <Text style={styles.orderNum}>{ord.orderNumber}</Text>
+                  <Text style={styles.customerName}>
+                    {ord.customer.name} {ord.customer.phone ? `(${ord.customer.phone})` : ''}
                   </Text>
                 </View>
-
-                {/* Deadline indicator */}
-                <View style={styles.deadlineRow}>
-                  <Text style={[styles.deadlineText, isOverdue && styles.overdueText]}>
-                    Target Selesai: {new Date(ord.currentPromisedAt).toLocaleString('id-ID', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                    {isOverdue ? ' (TERLAMBAT)' : ''}
-                  </Text>
+                <View style={styles.badgeGroup}>
+                  {hasIssue && (
+                    <View style={styles.issuePill}>
+                      <Text style={styles.issuePillText}>⚠️ TERTUNDA</Text>
+                    </View>
+                  )}
+                  {isOverdue && (
+                    <View style={styles.overduePill}>
+                      <Text style={styles.overduePillText}>TERLAMBAT</Text>
+                    </View>
+                  )}
                 </View>
+              </View>
 
-                {/* Package details if already packed */}
+              <View style={styles.divider} />
+
+              {/* Work Items / Lines */}
+              {ord.lines.map((line) => {
+                const stages = line.workflowSnapshot;
+                const currentIdx = stages.indexOf(line.currentStage);
+
+                return (
+                  <View key={line.lineId} style={styles.lineSection}>
+                    <View style={styles.lineHeader}>
+                      <Text style={styles.serviceName}>{line.service.name}</Text>
+                      <Text style={styles.stageLabel}>Tahap: {line.currentStage}</Text>
+                    </View>
+
+                    {/* Bags identification */}
+                    <View style={styles.bagsContainer}>
+                      {line.bags.map((b) => (
+                        <View key={b.bagId} style={styles.bagChip}>
+                          <Text style={styles.bagChipText}>🏷️ {b.bagId}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    {/* Visual Progress Stepper */}
+                    <View style={styles.stepper}>
+                      {stages.map((stg, sIdx) => {
+                        const isDone = sIdx < currentIdx;
+                        const isCurrent = sIdx === currentIdx;
+                        return (
+                          <View
+                            key={stg}
+                            style={[
+                              styles.stepDot,
+                              isDone && styles.stepDotDone,
+                              isCurrent && styles.stepDotCurrent,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.stepText,
+                                (isDone || isCurrent) && styles.stepTextActive,
+                              ]}
+                            >
+                              {stg.slice(0, 3)}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* Action Controls */}
+                    <View style={styles.actionRow}>
+                      <Button
+                        title={hasIssue ? '⚠️ Pakaian Tertahan' : `Lanjut: ${stages[currentIdx + 1] || 'SELESAI'}`}
+                        disabled={hasIssue || line.currentStage === 'READY'}
+                        onPress={() => handleAdvanceStage(ord, line.lineId)}
+                        style={styles.advanceBtn}
+                      />
+
+                      <Button
+                        title={hasIssue ? 'Buka Kendala' : 'Lapor Kendala'}
+                        variant="outline"
+                        onPress={() => setSelectedOrderForIssue(ord)}
+                        style={styles.issueBtn}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* Deadline & Packages Info */}
+              <View style={styles.cardFooter}>
+                <Text style={styles.deadlineText}>
+                  Target:{' '}
+                  {new Date(ord.currentPromisedAt).toLocaleDateString('id-ID', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+
                 {ord.finalPackages.length > 0 && (
-                  <View style={styles.packageInfo}>
-                    <Text style={styles.packageText}>
-                      Lokasi: {ord.finalPackages[0]?.rackLocation} · Total {ord.finalPackages.length} Paket
-                    </Text>
-                  </View>
+                  <Text style={styles.rackText}>
+                    📦 Rak: {ord.finalPackages.map((p) => p.rackLocation).join(', ')}
+                  </Text>
                 )}
+              </View>
+            </Card>
+          );
+        })
+      )}
 
-                {/* Action Buttons */}
-                <View style={styles.actionsRow}>
-                  {line?.currentStage !== 'READY' && ord.blockingIssue !== 'OPEN' && (
-                    <Button
-                      size="sm"
-                      label={`Lanjut ke ${
-                        line?.workflowSnapshot[line.workflowSnapshot.indexOf(line.currentStage) + 1] || 'Selesai'
-                      }`}
-                      onPress={() => handleAdvanceStage(ord, line?.lineId || '')}
-                    />
-                  )}
-
-                  {ord.blockingIssue !== 'OPEN' ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      label="Laporkan Kendala"
-                      onPress={() => setSelectedOrderForIssue(ord)}
-                    />
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      label="Selesaikan Kendala"
-                      onPress={() =>
-                        onUpdateOrder({
-                          ...ord,
-                          blockingIssue: 'RESOLVED',
-                        })
-                      }
-                    />
-                  )}
-                </View>
-              </Card>
-            );
-          })
-        )}
-      </View>
-
-      {/* Modal QC & Packing */}
-      <Modal visible={!!selectedOrderForQC} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+      {/* QC & Rack Placement Modal */}
+      <Modal
+        visible={selectedOrderForQC !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedOrderForQC(null)}
+      >
+        <View style={styles.modalBackdrop}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>QC Lolos & Masukkan ke Rak</Text>
+            <Text style={styles.modalTitle}>Quality Control (QC) & Penempatan Rak</Text>
             <Text style={styles.modalSubtitle}>
-              Pesanan {selectedOrderForQC?.orderNumber} ({selectedOrderForQC?.customer.name})
+              Order: {selectedOrderForQC?.orderNumber} ({selectedOrderForQC?.customer.name})
             </Text>
 
-            <Input
-              label="Kode / Nomor Rak"
-              value={qcRackLocation}
-              onChangeText={setQcRackLocation}
-              placeholder="Contoh: RAK-A3"
-            />
-
-            <View style={{ marginTop: spacing.sm }}>
+            <View style={styles.modalField}>
+              <Text style={styles.fieldLabel}>Lokasi Rak Penyimpanan *</Text>
               <Input
-                label="Jumlah Kantong/Paket Jadi"
-                value={qcPackageCount}
-                onChangeText={setQcPackageCount}
-                keyboardType="number-pad"
-                placeholder="1"
+                placeholder="Cth: RAK-A1, GANTUNG-03"
+                value={qcRackLocation}
+                onChangeText={setQcRackLocation}
+                autoCapitalize="characters"
               />
             </View>
 
-            <View style={styles.modalActions}>
-              <Button label="Batal" variant="ghost" onPress={() => setSelectedOrderForQC(null)} />
-              <Button label="Simpan & Tandai Siap" onPress={handleConfirmQCAndPack} />
+            <View style={styles.modalField}>
+              <Text style={styles.fieldLabel}>Jumlah Bungkus / Paket Fisik</Text>
+              <Input
+                keyboardType="numeric"
+                value={qcPackageCount}
+                onChangeText={setQcPackageCount}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <Button
+                title="Batal"
+                variant="outline"
+                onPress={() => setSelectedOrderForQC(null)}
+                style={styles.modalBtn}
+              />
+              <Button
+                title="Lolos QC & Simpan"
+                onPress={handleConfirmQCAndRack}
+                style={styles.modalBtn}
+              />
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Modal Report Issue */}
-      <Modal visible={!!selectedOrderForIssue} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Laporkan Kendala Pakaian</Text>
-            <Text style={styles.modalSubtitle}>
-              Pesanan {selectedOrderForIssue?.orderNumber}
-            </Text>
-
-            <Input
-              label="Alasan / Jenis Kendala"
-              value={issueReason}
-              onChangeText={setIssueReason}
-              placeholder="Contoh: Baju luntur, noda tinta membandel, kancing hilang"
-            />
-
-            <View style={styles.modalActions}>
-              <Button label="Batal" variant="ghost" onPress={() => setSelectedOrderForIssue(null)} />
-              <Button label="Tandai Blocking Issue" variant="destructive" onPress={handleReportIssue} />
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Issue Report & Re-Wash Modal (PRD M10) */}
+      <IssueReportModal
+        visible={selectedOrderForIssue !== null}
+        order={selectedOrderForIssue}
+        onClose={() => setSelectedOrderForIssue(null)}
+        onSubmitIssue={handleSubmitIssue}
+        onResolveIssue={handleResolveIssue}
+      />
     </ScrollView>
   );
 }
@@ -327,102 +391,199 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     backgroundColor: colors.background,
   },
-  header: {
-    marginBottom: spacing.md,
+  searchBox: {
+    marginBottom: spacing.sm,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.cardForeground,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: colors.mutedForeground,
-    marginTop: 2,
-  },
-  orderCard: {
-    marginBottom: spacing.md,
-  },
-  overdueCard: {
-    borderColor: colors.destructive.DEFAULT,
-    borderWidth: 1.5,
-  },
-  cardHeader: {
+  statusBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    paddingHorizontal: 4,
   },
-  orderNumber: {
-    fontSize: 14,
-    fontWeight: '800',
+  statusText: {
+    fontSize: 13,
     color: colors.cardForeground,
   },
-  customerName: {
-    fontSize: 13,
-    color: colors.mutedForeground,
-  },
-  detailsRow: {
-    marginTop: spacing.sm,
-  },
-  serviceName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.cardForeground,
-  },
-  bagLabel: {
-    fontSize: 12,
+  bold: {
+    fontWeight: '700',
     color: colors.primary.DEFAULT,
-    fontWeight: '600',
   },
-  deadlineRow: {
-    marginTop: 6,
-  },
-  deadlineText: {
+  sortHint: {
     fontSize: 11,
     color: colors.mutedForeground,
-  },
-  overdueText: {
-    color: colors.destructive.DEFAULT,
-    fontWeight: '700',
-  },
-  packageInfo: {
-    backgroundColor: '#F1F5F9',
-    padding: 6,
-    borderRadius: radius.sm,
-    marginTop: 6,
-  },
-  packageText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 8,
-    marginTop: spacing.sm,
   },
   emptyCard: {
     padding: spacing.xl,
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 14,
     color: colors.mutedForeground,
   },
-  modalOverlay: {
+  orderCard: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  overdueCard: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFF5F5',
+  },
+  blockedCard: {
+    borderColor: '#FECDD3',
+    backgroundColor: '#FFF1F2',
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  orderNum: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.cardForeground,
+    fontFamily: 'monospace',
+  },
+  customerName: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  badgeGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  issuePill: {
+    backgroundColor: '#BE123C',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  issuePillText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  overduePill: {
+    backgroundColor: colors.destructive.DEFAULT,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  overduePillText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  lineSection: {
+    marginBottom: spacing.sm,
+  },
+  lineHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  serviceName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.cardForeground,
+  },
+  stageLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary.DEFAULT,
+  },
+  bagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginBottom: spacing.sm,
+  },
+  bagChip: {
+    backgroundColor: colors.muted,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  bagChipText: {
+    fontSize: 11,
+    color: colors.cardForeground,
+  },
+  stepper: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: spacing.sm,
+    backgroundColor: colors.muted,
+    padding: 6,
+    borderRadius: radius.sm,
+  },
+  stepDot: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+  },
+  stepDotDone: {
+    backgroundColor: colors.primary.light,
+  },
+  stepDotCurrent: {
+    backgroundColor: colors.primary.DEFAULT,
+  },
+  stepText: {
+    fontSize: 9,
+    color: colors.mutedForeground,
+    fontWeight: '600',
+  },
+  stepTextActive: {
+    color: '#FFF',
+    fontWeight: '700',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  advanceBtn: {
+    flex: 2,
+    height: 38,
+  },
+  issueBtn: {
+    flex: 1,
+    height: 38,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  deadlineText: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+  },
+  rackText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary.DEFAULT,
+  },
+  modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.md,
+    padding: spacing.lg,
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: radius.lg,
-    padding: spacing.lg,
-    width: '100%',
-    maxWidth: 400,
+    padding: spacing.xl,
   },
   modalTitle: {
     fontSize: 16,
@@ -432,12 +593,24 @@ const styles = StyleSheet.create({
   modalSubtitle: {
     fontSize: 12,
     color: colors.mutedForeground,
+    marginTop: 4,
+    marginBottom: spacing.lg,
+  },
+  modalField: {
     marginBottom: spacing.md,
   },
-  modalActions: {
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.cardForeground,
+    marginBottom: 4,
+  },
+  modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: spacing.lg,
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  modalBtn: {
+    flex: 1,
   },
 });

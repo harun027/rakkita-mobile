@@ -21,7 +21,8 @@
     "ios": "expo run:ios --port 8088",
     "build:dev": "eas build --profile development --platform android",
     "build:apk": "eas build --profile preview --platform android",
-    "web": "expo start --port 8088 --web"
+    "web": "expo start --port 8088 --web",
+    "typecheck": "tsc --noEmit"
   },
   "private": true
 }
